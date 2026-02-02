@@ -1,0 +1,142 @@
+name: Auto Update Problem Counts
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'Easy/**'
+      - 'Medium/**'
+      - 'Hard/**'
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:  # Manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  update-problem-counts:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Create update script
+        run: |
+          cat > update_counts.py << 'EOF'
+          import os
+          import re
+          from datetime import datetime
+          
+          def count_files(directory):
+              """Count all code files in directory"""
+              if not os.path.isdir(directory):
+                  return 0
+              
+              extensions = ['.cpp', '.java', '.py', '.js', '.c', '.go', '.rs', '.kt', '.cs']
+              count = 0
+              
+              for root, dirs, files in os.walk(directory):
+                  for file in files:
+                      if any(file.endswith(ext) for ext in extensions):
+                          count += 1
+              
+              return count
+          
+          # Get counts
+          easy_count = count_files('Easy')
+          medium_count = count_files('Medium')
+          hard_count = count_files('Hard')
+          total_count = easy_count + medium_count + hard_count
+          current_date = datetime.now().strftime('%Y-%m-%d')
+          
+          print(f"📊 Problem Statistics:")
+          print(f"  Easy: {easy_count}")
+          print(f"  Medium: {medium_count}")
+          print(f"  Hard: {hard_count}")
+          print(f"  Total: {total_count}")
+          print(f"  Updated: {current_date}")
+          
+          # Read README
+          with open('README.md', 'r', encoding='utf-8') as f:
+              content = f.read()
+          
+          # Update the progress table
+          # Pattern for the table
+          table_pattern = r'(\| Difficulty \| Problems Solved \| Last Updated \|\n\|-+\|-+\|-+\|\n)(\| (Easy|Medium|Hard)[^|]*\|[^|]*\|[^|]*\|?\n?)+'
+          
+          new_table = f"""| Difficulty | Problems Solved | Last Updated |
+|------------|----------------|--------------|
+| Easy       | {easy_count:<15} | {current_date:<12} |
+| Medium     | {medium_count:<15} | {current_date:<12} |
+| Hard       | {hard_count:<15} | {current_date:<12} |"""
+          
+          # Try to replace table
+          if re.search(table_pattern, content, re.MULTILINE):
+              content = re.sub(table_pattern, new_table + '\n', content, flags=re.MULTILINE)
+          else:
+              # If table not found, add it after Progress Tracking section
+              progress_section = r'(## 📊 Progress Tracking\n)'
+              if re.search(progress_section, content):
+                  content = re.sub(progress_section, f'\\1\n{new_table}\n\n', content)
+              else:
+                  # Add new section
+                  content = content.replace('## 🎯 Purpose', f'## 📊 Progress Tracking\n\n{new_table}\n\n## 🎯 Purpose')
+          
+          # Also update any inline counts in other parts
+          content = re.sub(r'Easy\s+\|\s*\d+\s*\|', f'Easy       | {easy_count}             |', content)
+          content = re.sub(r'Medium\s+\|\s*\d+\s*\|', f'Medium     | {medium_count}             |', content)
+          content = re.sub(r'Hard\s+\|\s*\d+\s*\|', f'Hard       | {hard_count}             |', content)
+          
+          # Write back
+          with open('README.md', 'w', encoding='utf-8') as f:
+              f.write(content)
+          
+          print("✅ README updated successfully")
+          
+          # Set environment variables
+          with open(os.environ['GITHUB_ENV'], 'a') as env_file:
+              env_file.write(f'EASY_COUNT={easy_count}\n')
+              env_file.write(f'MEDIUM_COUNT={medium_count}\n')
+              env_file.write(f'HARD_COUNT={hard_count}\n')
+              env_file.write(f'TOTAL_COUNT={total_count}\n')
+              env_file.write(f'UPDATE_DATE={current_date}\n')
+          EOF
+      
+      - name: Run update script
+        run: python update_counts.py
+      
+      - name: Check for changes
+        id: git-diff
+        run: |
+          git diff --exit-code README.md
+          if [ $? -eq 0 ]; then
+            echo "No changes to README"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "README has changes"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            git diff README.md
+          fi
+      
+      - name: Commit and push changes
+        if: steps.git-diff.outputs.changed == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md
+          git commit -m "🤖 Auto-update problem counts: Easy=${{ env.EASY_COUNT }}, Medium=${{ env.MEDIUM_COUNT }}, Hard=${{ env.HARD_COUNT }}"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Update complete
+        run: echo "✅ Workflow completed successfully!"
