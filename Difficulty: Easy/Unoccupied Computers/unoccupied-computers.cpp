@@ -1,27 +1,28 @@
 class Solution {
-  public:
-    int solve(int n, string s) {
-        // code here
-        vector<int> check(26 , false) ;
-        int res = 0 ;
-        int cnt = n ;
+    public:
+      int solve(int n, string s) {
+          int ans=0;
+          unordered_map<char,int> mp;
+          int used_laptops=0;
+          for(int i=0;i<s.size();i++){
+              char p=s[i];
+              if(mp.find(p)!=mp.end() && mp[p]==1){
+                  mp[p]=0;
+                  used_laptops--;
 
-        for(int i=0 ; i<s.size() ; i++){
-            int idx = s[i] - 'A' ;
-            if(check[idx] == 1){
-                check[idx] = 0;
-                cnt++;
-            }else if(check[idx] == 0){
-                if(cnt > 0){
-                    cnt--;
-                    check[idx] = 1 ;
-                }else{
-                    res++; 
-                    check[idx] = -1 ;
-                }
-            }
-        }
+              }
+              if(mp.find(p)==mp.end()){
 
-        return res ;
-    }
-};
+                  mp[p]=1;
+                  used_laptops++;
+                  if(used_laptops>n){
+                      ans++;
+                      used_laptops=n;
+                      mp[p]=0;
+                  }
+              }
+
+          }
+          return ans;
+      }
+  };
